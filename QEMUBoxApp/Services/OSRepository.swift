@@ -26,7 +26,7 @@ class OSRepository: ObservableObject {
         let macOSes: [OSImage] = [
             OSImage(id: "macos-10.0", name: "Mac OS X", version: "10.0 Cheetah", architecture: "x86_64", downloadURL: "", size: 0, checksum: "", description: "Mac OS X 10.0 (Cheetah) — Installer not bundled. Provide your own installation image."),
             OSImage(id: "macos-10.1", name: "Mac OS X", version: "10.1 Puma", architecture: "x86_64", downloadURL: "", size: 0, checksum: "", description: "Mac OS X 10.1 (Puma) — installer not bundled."),
-            OSImage(id: "macos-10.2", name: "Mac OS X", version: "10.2 Jaguar", architecture: "x86_64", downloadURL: "", size: 0, checksum: "", description: "Mac OS X 10.2 (Jaguar)") ,
+            OSImage(id: "macos-10.2", name: "Mac OS X", version: "10.2 Jaguar", architecture: "x86_64", downloadURL: "", size: 0, checksum: "", description: "Mac OS X 10.2 (Jaguar)"),
             OSImage(id: "macos-10.3", name: "Mac OS X", version: "10.3 Panther", architecture: "x86_64", downloadURL: "", size: 0, checksum: "", description: "Mac OS X 10.3 (Panther)"),
             OSImage(id: "macos-10.4", name: "Mac OS X", version: "10.4 Tiger", architecture: "x86_64", downloadURL: "", size: 0, checksum: "", description: "Mac OS X 10.4 (Tiger)"),
             OSImage(id: "macos-10.5", name: "Mac OS X", version: "10.5 Leopard", architecture: "x86_64", downloadURL: "", size: 0, checksum: "", description: "Mac OS X 10.5 (Leopard)"),
@@ -43,7 +43,11 @@ class OSRepository: ObservableObject {
             OSImage(id: "macos-11", name: "macOS", version: "11 Big Sur", architecture: "arm64/x86_64", downloadURL: "", size: 0, checksum: "", description: "macOS 11 (Big Sur) — supports both Intel and Apple Silicon variants"),
             OSImage(id: "macos-12", name: "macOS", version: "12 Monterey", architecture: "arm64/x86_64", downloadURL: "", size: 0, checksum: "", description: "macOS 12 (Monterey)"),
             OSImage(id: "macos-13", name: "macOS", version: "13 Ventura", architecture: "arm64/x86_64", downloadURL: "", size: 0, checksum: "", description: "macOS 13 (Ventura)"),
-            OSImage(id: "macos-14", name: "macOS", version: "14 Sonoma", architecture: "arm64/x86_64", downloadURL: "", size: 0, checksum: "", description: "macOS 14 (Sonoma) — latest available")
+            OSImage(id: "macos-14", name: "macOS", version: "14 Sonoma", architecture: "arm64/x86_64", downloadURL: "", size: 0, checksum: "", description: "macOS 14 (Sonoma) — latest available"),
+            // Newly requested placeholders
+            OSImage(id: "macos-15", name: "macOS", version: "15", architecture: "arm64/x86_64", downloadURL: "", size: 0, checksum: "", description: "macOS 15 — placeholder"),
+            OSImage(id: "macos-26", name: "macOS", version: "26", architecture: "arm64/x86_64", downloadURL: "", size: 0, checksum: "", description: "macOS 26 — placeholder"),
+            OSImage(id: "macos-27", name: "macOS", version: "27", architecture: "arm64/x86_64", downloadURL: "", size: 0, checksum: "", description: "macOS 27 — recommended on Apple Silicon hosts")
         ]
 
         // Existing Linux/other OS list (kept as before)
@@ -62,16 +66,16 @@ class OSRepository: ObservableObject {
         let recommendedMacs: [OSImage]
         if hostIsAppleSilicon() {
             // Prefer ARM macOS variants (newer macOS versions are available for arm64)
-            recommendedMacs = macOSes.filter { $0.architecture.contains("arm64") || $0.architecture.contains("arm64/x86_64") }
+            recommendedMacs = macOSes.filter { $0.architecture.contains("arm64") || $0.architecture.contains("arm64/x86_64") || $0.id == "macos-27" }
         } else {
             // Prefer x86_64 variants
             recommendedMacs = macOSes.filter { $0.architecture.contains("x86_64") || $0.architecture.contains("arm64/x86_64") }
         }
 
-        // Combine recommended macs first, then others and other OSes
+        // Combine recommended macs first, then the rest and other OSes
         var combined: [OSImage] = []
         combined.append(contentsOf: recommendedMacs)
-        combined.append(contentsOf: macOSes.filter { !recommendedMacs.contains(where: { $0.id == $0.id }) })
+        combined.append(contentsOf: macOSes.filter { mac in !recommendedMacs.contains(where: { $0.id == mac.id }) })
         combined.append(contentsOf: otherOSes)
 
         DispatchQueue.main.async {
