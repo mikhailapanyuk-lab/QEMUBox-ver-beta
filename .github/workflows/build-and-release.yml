@@ -1,0 +1,191 @@
+name: Build & Release QEMUBox
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    name: Build QEMU, assemble OpenCore, create .deb and upload artifacts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install packages (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git pkg-config libglib2.0-dev libpixman-1-dev libssl-dev libtool automake autoconf python3 python3-pip unzip wget ca-certificates zip dpkg-dev curl
+
+      - name: Prepare build dirs
+        run: |
+          mkdir -p build artifacts
+
+      - name: Attempt to build QEMU (best-effort)
+        run: |
+          if [ -x "QEMU/build-qemu-ios.sh" ]; then
+            cd QEMU
+            chmod +x build-qemu-ios.sh || true
+            ./build-qemu-ios.sh || true
+            cd ..
+          else
+            echo "No QEMU build script found or not executable; skipping QEMU build"
+          fi
+
+      - name: Collect QEMU artifacts (if produced)
+        run: |
+          # Common locations; adjust if your build script writes elsewhere
+          if [ -f "QEMU/qemu-system-aarch64" ]; then cp QEMU/qemu-system-aarch64 artifacts/ || true; fi
+          if [ -f "QEMU/qemu-img" ]; then cp QEMU/qemu-img artifacts/ || true; fi
+          if [ -f "QEMU/build/qemu-system-aarch64" ]; then cp QEMU/build/qemu-system-aarch64 artifacts/ || true; fi
+          if [ -f "QEMU/build/qemu-img" ]; then cp QEMU/build/qemu-img artifacts/ || true; fi
+          # Make sure artifacts exist (empty placeholders are acceptable for workflow to continue)
+          ls -la artifacts || true
+
+      - name: Prepare OpenCore helper archive
+        run: |
+          if [ -d "Packaging/opencore-sample" ]; then
+            (cd Packaging && zip -r ../artifacts/opencore-firmware.zip opencore-sample) || true
+          else
+            echo "No local OpenCore sample found; fetching latest OpenCore release (best-effort)"
+            api_url="https://api.github.com/repos/acidanthera/OpenCorePkg/releases/latest"
+            asset_url=$(curl -s "$api_url" | grep -i '"browser_download_url":' | grep -i -E 'OpenCore.*zip|OpenCore.*RELEASE' | head -n1 | cut -d '"' -f4 || true)
+            if [ -n "$asset_url" ]; then
+              echo "Downloading OpenCore asset: $asset_url"
+              wget -O artifacts/opencore-firmware.zip "$asset_url" || true
+            else
+              echo "Could not locate upstream OpenCore release automatically. Creating empty placeholder archive."
+              mkdir -p tmp_opencore
+              echo "OpenCore placeholder" > tmp_opencore/README.txt
+              (cd tmp_opencore && zip -r ../artifacts/opencore-firmware.zip .) || true
+              rm -rf tmp_opencore
+            fi
+          fi
+          ls -la artifacts || true
+
+      - name: Compute SHA256 checksums for artifacts
+        run: |
+          cd artifacts
+          for f in qemu-system-aarch64 qemu-img opencore-firmware.zip; do
+            if [ -f "$f" ]; then
+              sha256sum "$f" | awk '{print $1}' > "$f.sha256"
+            fi
+          done
+          ls -la
+
+      - name: Inject checksums into download helper
+        run: |
+          # If file exists, replace placeholders in Packaging/scripts/download_binaries.sh with computed checksums
+          set -e
+          cd $GITHUB_WORKSPACE
+          helper=Packaging/scripts/download_binaries.sh
+          if [ -f artifacts/qemu-system-aarch64.sha256 ]; then
+            QSYS_SHA=$(cat artifacts/qemu-system-aarch64.sha256)
+            perl -0777 -pe "s/(QEMU_SYSTEM_SHA=\")[^\"]*(\")/\$1${QSYS_SHA}\$2/s" -i "$helper"
+          fi
+          if [ -f artifacts/qemu-img.sha256 ]; then
+            QIMG_SHA=$(cat artifacts/qemu-img.sha256)
+            perl -0777 -pe "s/(QEMU_IMG_SHA=\")[^\"]*(\")/\$1${QIMG_SHA}\$2/s" -i "$helper"
+          fi
+          if [ -f artifacts/opencore-firmware.zip.sha256 ]; then
+            OCRC_SHA=$(cat artifacts/opencore-firmware.zip.sha256)
+            perl -0777 -pe "s/(OPENCORE_SHA=\")[^\"]*(\")/\$1${OCRC_SHA}\$2/s" -i "$helper"
+          fi
+          echo "Injected checksums into $helper (if present)"
+          git --no-pager diff -- Packaging/scripts/download_binaries.sh || true
+
+      - name: Build .deb (packaging)
+        run: |
+          PACKAGE_DIR=package
+          DEB_OUT=artifacts/qemubox_0.1.0_iphoneos-arm.deb
+          rm -rf "$PACKAGE_DIR"
+          mkdir -p "$PACKAGE_DIR"/DEBIAN
+          cp Packaging/DEBIAN/control "$PACKAGE_DIR/DEBIAN/control" || true
+          chmod 755 "$PACKAGE_DIR/DEBIAN/control" || true
+
+          # Place the app if built (best-effort). Build the iOS app on a macOS runner and place it at build/QEMUBox.app to include it.
+          if [ -d "build/QEMUBox.app" ]; then
+            mkdir -p "$PACKAGE_DIR/Applications"
+            cp -R build/QEMUBox.app "$PACKAGE_DIR/Applications/" || true
+          else
+            echo "Warning: build/QEMUBox.app not found; package will not include the app. Build the iOS app locally or via macOS runner if needed."
+          fi
+
+          # place download helper (use modified helper with checksums)
+          mkdir -p "$PACKAGE_DIR/usr/local/bin"
+          cp Packaging/scripts/download_binaries.sh "$PACKAGE_DIR/usr/local/bin/download_binaries.sh" || true
+          chmod 755 "$PACKAGE_DIR/usr/local/bin/download_binaries.sh" || true
+
+          # Add postinst if present
+          if [ -f Packaging/DEBIAN/postinst ]; then
+            cp Packaging/DEBIAN/postinst "$PACKAGE_DIR/DEBIAN/postinst"
+            chmod 755 "$PACKAGE_DIR/DEBIAN/postinst"
+          fi
+
+          # Add firmware folder placeholder
+          mkdir -p "$PACKAGE_DIR/var/mobile/qemu/firmware"
+
+          dpkg-deb --build "$PACKAGE_DIR" "$DEB_OUT" || true
+          ls -la artifacts || true
+
+      - name: Create GitHub Release (v0.1) if not exists
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v0.1
+          name: v0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload .deb to Release
+        if: steps.create_release.outputs.upload_url != ''
+        uses: softprops/action-upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/qemubox_0.1.0_iphoneos-arm.deb
+          asset_name: qemubox_0.1.0_iphoneos-arm.deb
+          asset_content_type: application/vnd.debian.binary-package
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload qemu-system if present
+        if: steps.create_release.outputs.upload_url != ''
+        uses: softprops/action-upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/qemu-system-aarch64
+          asset_name: qemu-system-aarch64
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload qemu-img if present
+        if: steps.create_release.outputs.upload_url != ''
+        uses: softprops/action-upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/qemu-img
+          asset_name: qemu-img
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload OpenCore firmware zip
+        if: steps.create_release.outputs.upload_url != ''
+        uses: softprops/action-upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/opencore-firmware.zip
+          asset_name: opencore-firmware.zip
+          asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload remaining artifacts (debug)
+        if: steps.create_release.outputs.upload_url != ''
+        run: |
+          ls -la artifacts || true
