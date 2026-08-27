@@ -19,7 +19,7 @@ jobs:
       - name: Install packages (Ubuntu)
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git pkg-config libglib2.0-dev libpixman-1-dev libssl-dev libtool automake autoconf python3 python3-pip unzip wget ca-certificates zip dpkg-dev curl
+          sudo apt-get install -y build-essential git pkg-config libglib2.0-dev libpixman-1-dev libssl-dev libtool automake autoconf python3 python3-pip unzip wget ca-certificates zip dpkg-dev curl || true
 
       - name: Prepare build dirs
         run: |
@@ -132,60 +132,17 @@ jobs:
           dpkg-deb --build "$PACKAGE_DIR" "$DEB_OUT" || true
           ls -la artifacts || true
 
-      - name: Create GitHub Release (v0.1) if not exists
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Create GitHub Release and upload artifacts
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: v0.1
-          release_name: v0.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload .deb to Release
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/qemubox_0.1.0_iphoneos-arm.deb
-          asset_name: qemubox_0.1.0_iphoneos-arm.deb
-          asset_content_type: application/vnd.debian.binary-package
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload qemu-system if present
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/qemu-system-aarch64
-          asset_name: qemu-system-aarch64
-          asset_content_type: application/octet-stream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload qemu-img if present
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/qemu-img
-          asset_name: qemu-img
-          asset_content_type: application/octet-stream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload OpenCore firmware zip
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/opencore-firmware.zip
-          asset_name: opencore-firmware.zip
-          asset_content_type: application/zip
+          files: |
+            artifacts/qemubox_0.1.0_iphoneos-arm.deb
+            artifacts/qemu-system-aarch64
+            artifacts/qemu-img
+            artifacts/opencore-firmware.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload remaining artifacts (debug)
-        if: steps.create_release.outputs.upload_url != ''
         run: |
           ls -la artifacts || true
