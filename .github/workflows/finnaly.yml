@@ -1,0 +1,100 @@
+name: CI — Build on latest Xcode
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build:
+    name: Build (latest Xcode)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up latest Xcode
+        uses: apple/actions/setup-xcode@v2
+        with:
+          xcode-version: latest
+
+      - name: Install tooling
+        run: |
+          set -e
+          gem install --no-document xcpretty || true
+
+      - name: Install dependencies (CocoaPods / SwiftPM / Carthage)
+        run: |
+          set -e
+          if [ -f Podfile ]; then
+            echo "Podfile found — installing CocoaPods..."
+            sudo gem install cocoapods --no-document || true
+            pod install --repo-update || true
+          fi
+          if [ -f Cartfile ]; then
+            echo "Cartfile found — running Carthage bootstrap..."
+            brew tap carthage/maintainer || true
+            brew install carthage || true
+            carthage bootstrap --platform iOS || true
+          fi
+          # Resolve Swift packages if used
+          swift package resolve || true
+
+      - name: Find Xcode project/workspace and scheme
+        id: find
+        run: |
+          set -e
+          workspace=$(ls *.xcworkspace 2>/dev/null | head -n1 || true)
+          project=$(ls *.xcodeproj 2>/dev/null | head -n1 || true)
+          echo "workspace=$workspace" >> $GITHUB_OUTPUT
+          echo "project=$project" >> $GITHUB_OUTPUT
+
+          if [ -n "$workspace" ]; then
+            echo "Using workspace: $workspace"
+            schemes=$(xcodebuild -workspace "$workspace" -list 2>/dev/null || true)
+          elif [ -n "$project" ]; then
+            echo "Using project: $project"
+            schemes=$(xcodebuild -project "$project" -list 2>/dev/null || true)
+          else
+            echo "::error::No .xcworkspace or .xcodeproj found in the repository root."
+            exit 1
+          fi
+
+          # Parse the first scheme listed
+          scheme=$(echo "$schemes" | awk '/Schemes:/{flag=1; next} flag && NF{print $1; exit}')
+          scheme=$(echo "$scheme" | sed -e 's/^[ \t]*//;s/[ \t]*$//')
+
+          if [ -z "$scheme" ]; then
+            echo "::error::Could not detect a scheme. Make sure your scheme is shared in Xcode or set the SCHEME variable in the workflow."
+            exit 1
+          fi
+
+          echo "scheme=$scheme" >> $GITHUB_OUTPUT
+
+      - name: Build (simulator)
+        env:
+          WORKSPACE: ${{ steps.find.outputs.workspace }}
+          PROJECT: ${{ steps.find.outputs.project }}
+          SCHEME: ${{ steps.find.outputs.scheme }}
+        run: |
+          set -e
+          echo "WORKSPACE=$WORKSPACE"
+          echo "PROJECT=$PROJECT"
+          echo "SCHEME=$SCHEME"
+
+          DESTINATION="platform=iOS Simulator,name=iPhone 14,OS=latest"
+
+          if [ -n "$WORKSPACE" ]; then
+            xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -sdk iphonesimulator -destination "$DESTINATION" clean build CODE_SIGNING_ALLOWED=NO | xcpretty
+          else
+            xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphonesimulator -destination "$DESTINATION" clean build CODE_SIGNING_ALLOWED=NO | xcpretty
+          fi
+
+      - name: Archive Derived Data (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-derived-data
+          path: DerivedData || ""
