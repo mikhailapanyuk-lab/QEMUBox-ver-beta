@@ -19,7 +19,7 @@ jobs:
       - name: Install packages (Ubuntu)
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git pkg-config libglib2.0-dev libpixman-1-dev libssl-dev libtool automake autoconf python3 python3-pip unzip wget ca-certificates zip dpkg-dev curl rsync
+          sudo apt-get install -y build-essential git pkg-config libglib2.0-dev libpixman-1-dev libssl-dev libtool automake autoconf python3 python3-pip unzip wget ca-certificates zip dpkg-dev curl
 
       - name: Prepare build dirs
         run: |
@@ -134,16 +134,16 @@ jobs:
 
       - name: Create GitHub Release (v0.1) if not exists
         id: create_release
-        uses: softprops/action-gh-release@v1
+        uses: actions/create-release@v1
         with:
           tag_name: v0.1
-          name: v0.1
+          release_name: v0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload .deb to Release
         if: steps.create_release.outputs.upload_url != ''
-        uses: softprops/action-upload-release-asset@v1
+        uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: artifacts/qemubox_0.1.0_iphoneos-arm.deb
@@ -154,7 +154,7 @@ jobs:
 
       - name: Upload qemu-system if present
         if: steps.create_release.outputs.upload_url != ''
-        uses: softprops/action-upload-release-asset@v1
+        uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: artifacts/qemu-system-aarch64
@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload qemu-img if present
         if: steps.create_release.outputs.upload_url != ''
-        uses: softprops/action-upload-release-asset@v1
+        uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: artifacts/qemu-img
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload OpenCore firmware zip
         if: steps.create_release.outputs.upload_url != ''
-        uses: softprops/action-upload-release-asset@v1
+        uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: artifacts/opencore-firmware.zip
