@@ -10,7 +10,7 @@ jobs:
     name: Build and package .deb
     runs-on: macos-latest
     env:
-      # REQUIRED: change these if needed
+      # REQUIRED: edit these to match your Xcode scheme / app name
       SCHEME: QEMUBox
       APP_NAME: QEMUBox
       PACKAGE_IDENTIFIER: com.yourcompany.qemubox
@@ -35,8 +35,8 @@ jobs:
           set -e
           echo "Looking for Xcode workspace/project..."
           if [ -n "${{ env.PROJECT_FILE }}" ]; then
-            # Use explicit override
             pf="${{ env.PROJECT_FILE }}"
+            echo "PROJECT_FILE override set to: $pf"
             if [ -e "$pf" ]; then
               if [[ "$pf" == *.xcworkspace* ]]; then
                 echo "project_type=workspace" >> $GITHUB_OUTPUT
@@ -59,7 +59,6 @@ jobs:
           proj=$(find . -type d -name "*.xcodeproj" -print -quit || true)
 
           if [ -n "$ws" ]; then
-            # strip leading ./ for cleanliness
             ws=${ws#./}
             echo "project_type=workspace" >> $GITHUB_OUTPUT
             echo "project_file=$ws" >> $GITHUB_OUTPUT
@@ -75,11 +74,11 @@ jobs:
             exit 0
           fi
 
-          # Diagnostics: list top-level and ios/ directories to help debugging
+          # Diagnostics: list top-level and some directories to help debugging
           echo "No .xcworkspace or .xcodeproj found in repo (recursive). Showing some files to help debug:" >&2
           echo "Top-level files:" >&2
           ls -la || true
-          echo "Recursively listing potential Xcode dirs (first 200 lines):" >&2
+          echo "Recursively listing directories (first 200 lines):" >&2
           find . -maxdepth 4 -type d -print | sed -n '1,200p' >&2
           echo "If your Xcode project lives in a subdirectory, set the PROJECT_FILE env to its path, e.g. 'PROJECT_FILE: ios/QEMUBox.xcodeproj'." >&2
           exit 1
@@ -107,12 +106,10 @@ jobs:
             find build -maxdepth 4 -ls || true
             exit 1
           fi
-          # normalize path
           app=${app#./}
           echo "app_path=$app" >> $GITHUB_OUTPUT
           echo "Found .app at: $app"
 
-      # ... packaging & upload steps unchanged ...
       - name: Package .deb
         run: |
           set -e
