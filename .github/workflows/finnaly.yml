@@ -1,22 +1,49 @@
-name: CI — Build on latest Xcode
+name: CI — Build IPA (latest Xcode)
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main", "master"]
   pull_request:
-    branches: ["**"]
+    branches: ["main", "master"]
+  workflow_dispatch:
+    inputs:
+      scheme:
+        description: 'Xcode scheme (optional — auto-detect if empty)'
+        required: false
+        default: ''
+      export_method:
+        description: 'Export method: app-store | ad-hoc | development | enterprise'
+        required: false
+        default: 'ad-hoc'
+      team_id:
+        description: 'Optional Apple Team ID to include in exportOptions.plist'
+        required: false
+        default: ''
+      use_provisioning_files:
+        description: 'If true, install CERT_P12 + PROV_PROFILE from secrets instead of using -allowProvisioningUpdates'
+        required: false
+        default: 'false'
 
 jobs:
   build:
-    name: Build (latest Xcode)
+    name: Build and export IPA
     runs-on: macos-latest
-
+    env:
+      # Secrets (optional) to provide via GitHub repo Settings → Secrets:
+      # CERT_P12      - base64-encoded .p12 certificate (optional)
+      # CERT_PASSWORD - password for the .p12 certificate (optional)
+      # PROV_PROFILE  - base64-encoded provisioning profile (.mobileprovision) (optional)
+      CERT_P12: ${{ secrets.CERT_P12 }}
+      CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+      PROV_PROFILE: ${{ secrets.PROV_PROFILE }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up latest Xcode
-        uses: apple/actions/setup-xcode@v2
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest
 
@@ -24,77 +51,16 @@ jobs:
         run: |
           set -e
           gem install --no-document xcpretty || true
-
-      - name: Install dependencies (CocoaPods / SwiftPM / Carthage)
-        run: |
-          set -e
+          # Install CocoaPods if Podfile exists
           if [ -f Podfile ]; then
-            echo "Podfile found — installing CocoaPods..."
             sudo gem install cocoapods --no-document || true
+            pod repo update || true
             pod install --repo-update || true
           fi
-          if [ -f Cartfile ]; then
-            echo "Cartfile found — running Carthage bootstrap..."
-            brew tap carthage/maintainer || true
-            brew install carthage || true
-            carthage bootstrap --platform iOS || true
-          fi
-          # Resolve Swift packages if used
-          swift package resolve || true
 
-      - name: Find Xcode project/workspace and scheme
-        id: find
+      - name: (Optional) Install certificate & provisioning profile from secrets
+        if: ${{ inputs.use_provisioning_files == 'true' }}
         run: |
           set -e
-          workspace=$(ls *.xcworkspace 2>/dev/null | head -n1 || true)
-          project=$(ls *.xcodeproj 2>/dev/null | head -n1 || true)
-          echo "workspace=$workspace" >> $GITHUB_OUTPUT
-          echo "project=$project" >> $GITHUB_OUTPUT
-
-          if [ -n "$workspace" ]; then
-            echo "Using workspace: $workspace"
-            schemes=$(xcodebuild -workspace "$workspace" -list 2>/dev/null || true)
-          elif [ -n "$project" ]; then
-            echo "Using project: $project"
-            schemes=$(xcodebuild -project "$project" -list 2>/dev/null || true)
-          else
-            echo "::error::No .xcworkspace or .xcodeproj found in the repository root."
-            exit 1
-          fi
-
-          # Parse the first scheme listed
-          scheme=$(echo "$schemes" | awk '/Schemes:/{flag=1; next} flag && NF{print $1; exit}')
-          scheme=$(echo "$scheme" | sed -e 's/^[ \t]*//;s/[ \t]*$//')
-
-          if [ -z "$scheme" ]; then
-            echo "::error::Could not detect a scheme. Make sure your scheme is shared in Xcode or set the SCHEME variable in the workflow."
-            exit 1
-          fi
-
-          echo "scheme=$scheme" >> $GITHUB_OUTPUT
-
-      - name: Build (simulator)
-        env:
-          WORKSPACE: ${{ steps.find.outputs.workspace }}
-          PROJECT: ${{ steps.find.outputs.project }}
-          SCHEME: ${{ steps.find.outputs.scheme }}
-        run: |
-          set -e
-          echo "WORKSPACE=$WORKSPACE"
-          echo "PROJECT=$PROJECT"
-          echo "SCHEME=$SCHEME"
-
-          DESTINATION="platform=iOS Simulator,name=iPhone 14,OS=latest"
-
-          if [ -n "$WORKSPACE" ]; then
-            xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -sdk iphonesimulator -destination "$DESTINATION" clean build CODE_SIGNING_ALLOWED=NO | xcpretty
-          else
-            xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphonesimulator -destination "$DESTINATION" clean build CODE_SIGNING_ALLOWED=NO | xcpretty
-          fi
-
-      - name: Archive Derived Data (optional)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcode-derived-data
-          path: DerivedData || ""
+          if [ -z "$CERT_P12" ] || [ -](#)
+
