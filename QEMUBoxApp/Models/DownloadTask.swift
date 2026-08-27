@@ -10,12 +10,14 @@ struct DownloadTask: Identifiable, Codable {
     let vmName: String
     let cpuCores: Int
     let ramGB: Int
+    let fileType: String
+    let checksum: String
     var progress: Double
     var status: DownloadStatus
     let createdAt: Date
     
     enum CodingKeys: String, CodingKey {
-        case id, osId, osName, downloadURL, fileName, totalSize, vmName, cpuCores, ramGB, progress, status, createdAt
+        case id, osId, osName, downloadURL, fileName, totalSize, vmName, cpuCores, ramGB, fileType, checksum, progress, status, createdAt
     }
 }
 
