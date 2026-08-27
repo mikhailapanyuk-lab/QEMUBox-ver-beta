@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CryptoKit
 
 class DownloadManager: ObservableObject {
     static let shared = DownloadManager()
@@ -7,8 +8,8 @@ class DownloadManager: ObservableObject {
     @Published var downloads: [DownloadTask] = []
     @Published var totalProgress: Double = 0
 
-    private var urlSessions: [String: URLSession] = [:] // keyed by DownloadTask.id
-    private var taskIdToDownloadId: [Int: String] = [:] // URLSessionDownloadTask.taskIdentifier -> DownloadTask.id
+    private var urlSessions: [String: URLSession] = [:]
+    private var taskIdToDownloadId: [Int: String] = [:]
     private var downloadTasksById: [String: URLSessionDownloadTask] = [:]
 
     private let fileManager = FileManager.default
@@ -43,16 +44,21 @@ class DownloadManager: ObservableObject {
 
     // MARK: - Download OS
     func downloadOS(_ os: OSImage, vmName: String, cpuCores: Int, ramGB: Int, completion: @escaping (Bool) -> Void) {
+        let ext = os.fileType.isEmpty ? "iso" : os.fileType
+        let fileName = "\(os.name)-\(os.version).\(ext)".replacingOccurrences(of: " ", with: "_")
+
         let downloadTask = DownloadTask(
             id: UUID().uuidString,
             osId: os.id,
             osName: os.name,
             downloadURL: os.downloadURL,
-            fileName: "\(os.name)-\(os.version).iso",
+            fileName: fileName,
             totalSize: os.size,
             vmName: vmName,
             cpuCores: cpuCores,
             ramGB: ramGB,
+            fileType: ext,
+            checksum: os.checksum,
             progress: 0,
             status: .downloading,
             createdAt: Date()
@@ -81,8 +87,9 @@ class DownloadManager: ObservableObject {
             return
         }
 
-        guard let url = URL(string: download.downloadURL) else {
-            updateDownloadStatus(download.id, status: .failed)
+        guard let url = URL(string: download.downloadURL), !download.downloadURL.isEmpty else {
+            // If no remote URL (for user-supplied images), treat as pending and complete true
+            updateDownloadStatus(download.id, status: .paused)
             completion(false)
             return
         }
@@ -245,6 +252,45 @@ class DownloadManager: ObservableObject {
 
         print("VM created: \(vm.name)")
     }
+
+    // MARK: - Helpers: checksum & post-process
+    private func sha256Hex(of url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let hash = SHA256.hash(data: data)
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func runPostProcessIfNeeded(_ download: DownloadTask, at path: URL) -> Bool {
+        // If the target is already qcow2 or raw, nothing to do
+        let lower = download.fileType.lowercased()
+        if lower == "qcow2" || lower == "raw" { return true }
+
+        // Check for qemu-img
+        let qemuImgPath = "/var/mobile/qemu/bin/qemu-img"
+        guard fileManager.fileExists(atPath: qemuImgPath) else {
+            // qemu-img not available; leave as-is and let user convert off-device
+            return false
+        }
+
+        // Convert to qcow2 in the same directory
+        let destURL = path.deletingPathExtension().appendingPathExtension("qcow2")
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: qemuImgPath)
+        proc.arguments = ["convert", "-O", "qcow2", path.path, destURL.path]
+
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            if proc.terminationStatus == 0 {
+                // replace path
+                return true
+            } else {
+                return false
+            }
+        } catch {
+            return false
+        }
+    }
 }
 
 // MARK: - URLSessionDelegate
@@ -260,6 +306,28 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
         do {
             try fileManager.moveItem(at: location, to: destinationURL)
+
+            // Verify checksum if provided
+            let downloadRecord = downloads[index]
+            if !downloadRecord.checksum.isEmpty {
+                if let got = sha256Hex(of: destinationURL), got != downloadRecord.checksum {
+                    print("Checksum mismatch: expected \(downloadRecord.checksum) got \(got)")
+                    updateDownloadStatus(downloadId, status: .failed)
+                    return
+                }
+            }
+
+            // Optionally post-process (convert) if needed and qemu-img available
+            let postSuccess = runPostProcessIfNeeded(downloadRecord, at: destinationURL)
+            if !postSuccess {
+                // If post-process failed but file is acceptable (qcow2/raw), continue; otherwise mark as paused and notify user
+                if downloadRecord.fileType.lowercased() != "qcow2" && downloadRecord.fileType.lowercased() != "raw" {
+                    print("Post-process failed or deferred for \(downloadRecord.fileName)")
+                    updateDownloadStatus(downloadId, status: .paused)
+                    return
+                }
+            }
+
             updateDownloadStatus(downloadId, status: .completed)
 
             // Cleanup resume data
