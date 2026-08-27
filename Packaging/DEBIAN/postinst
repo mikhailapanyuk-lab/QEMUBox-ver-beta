@@ -1,0 +1,50 @@
+#!/bin/bash
+set -e
+
+LOG="/var/log/qemubox-install.log"
+DOWNLOAD_HELPER="/usr/local/bin/download_binaries.sh"
+
+echo "[qemubox] postinst started at $(date)" >> "$LOG"
+
+# Ensure helper exists and is executable. If not, try packaged helper path.
+if [ ! -x "$DOWNLOAD_HELPER" ]; then
+    if [ -x "/var/mobile/qemu/download_binaries.sh" ]; then
+        DOWNLOAD_HELPER="/var/mobile/qemu/download_binaries.sh"
+    fi
+fi
+
+# Run download helper but don't fail install if network is unavailable. Create a deferred marker for the app.
+if [ -x "$DOWNLOAD_HELPER" ]; then
+    echo "[qemubox] running download helper: $DOWNLOAD_HELPER" >> "$LOG"
+    if "$DOWNLOAD_HELPER" >> "$LOG" 2>&1; then
+        echo "[qemubox] download helper finished OK" >> "$LOG"
+    else
+        echo "[qemubox] download helper failed or network unavailable; marking deferred" >> "$LOG"
+        touch /var/mobile/qemu/.download_deferred
+    fi
+else
+    echo "[qemubox] download helper not found or not executable" >> "$LOG"
+    touch /var/mobile/qemu/.download_deferred
+fi
+
+# Set ownership and permissions
+chown -R mobile:mobile /Applications/QEMUBox.app || true
+chown -R mobile:mobile /var/mobile/qemu || true
+chmod -R 755 /var/mobile/qemu/bin || true
+chmod -R 755 /Applications/QEMUBox.app || true
+
+# Refresh SpringBoard icons
+if command -v uicache >/dev/null 2>&1; then
+    echo "[qemubox] running uicache" >> "$LOG"
+    uicache -a >> "$LOG" 2>&1 || true
+fi
+
+# Respring if running in a device environment
+if [ "$1" != "--no-respring" ]; then
+    echo "[qemubox] respringing SpringBoard" >> "$LOG"
+    killall -9 SpringBoard || true
+fi
+
+echo "[qemubox] postinst finished at $(date)" >> "$LOG"
+
+exit 0
