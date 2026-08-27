@@ -77,7 +77,7 @@ jobs:
           dpkg-deb --build package "${APP_NAME}-${VERSION}.deb"
 
       - name: Upload .deb artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: "${{ env.APP_NAME }}-${{ env.VERSION }}.deb"
           path: "${{ env.APP_NAME }}-${{ env.VERSION }}.deb"
