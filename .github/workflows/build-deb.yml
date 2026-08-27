@@ -1,0 +1,83 @@
+name: Build .deb for Sileo
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build-deb:
+    name: Build and package .deb
+    runs-on: macos-latest
+    env:
+      # Edit these to match your Xcode scheme / app name
+      SCHEME: QEMUBox
+      APP_NAME: QEMUBox
+      PACKAGE_IDENTIFIER: com.yourcompany.qemubox
+      VERSION: 0.1.0
+      ARCH: iphoneos-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dpkg (Homebrew)
+        run: |
+          set -e
+          brew update
+          brew install dpkg || true
+
+      - name: Find Xcode project or workspace
+        id: findproj
+        run: |
+          ws=$(ls *.xcworkspace 2>/dev/null || true)
+          proj=$(ls *.xcodeproj 2>/dev/null || true)
+          if [ -n "$ws" ]; then
+            echo "project_type=workspace" >> $GITHUB_OUTPUT
+            echo "project_file=$ws" >> $GITHUB_OUTPUT
+          else
+            echo "project_type=project" >> $GITHUB_OUTPUT
+            echo "project_file=$proj" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build app (Release, device, unsigned)
+        run: |
+          set -e
+          mkdir -p build
+          if [ "${{ steps.findproj.outputs.project_type }}" = "workspace" ]; then
+            xcodebuild -workspace "${{ steps.findproj.outputs.project_file }}" -scheme "${{ env.SCHEME }}" -configuration Release -sdk iphoneos BUILD_DIR=build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
+          else
+            xcodebuild -project "${{ steps.findproj.outputs.project_file }}" -scheme "${{ env.SCHEME }}" -configuration Release -sdk iphoneos BUILD_DIR=build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
+          fi
+
+      - name: Locate .app
+        id: findapp
+        run: |
+          set -e
+          app=$(find build -type d -name "*.app" | head -n1)
+          if [ -z "$app" ]; then
+            echo "No .app found in build output" >&2
+            exit 1
+          fi
+          echo "app_path=$app" >> $GITHUB_OUTPUT
+
+      - name: Package .deb
+        run: |
+          set -e
+          rm -rf package
+          mkdir -p package/Applications package/DEBIAN
+          cp -R "${{ steps.findapp.outputs.app_path }}" "package/Applications/${APP_NAME}.app"
+
+          printf "Package: %s\nName: %s\nSection: Applications\nPriority: optional\nArchitecture: %s\nVersion: %s\nMaintainer: GitHub Actions <noreply@github.com>\nDescription: QEMU virtualization for iOS packaged for Sileo. Run any OS on your iPhone/iPad.\n" "$PACKAGE_IDENTIFIER" "$APP_NAME" "$ARCH" "$VERSION" > package/DEBIAN/control
+
+          printf '#!/bin/sh\nset -e\nchown -R root:wheel /Applications/%s.app\nchmod -R 755 /Applications/%s.app\n# Update icon cache and attempt a respring if available\nif command -v uicache >/dev/null 2>&1; then uicache -p /Applications/%s.app || true; fi\nif command -v sbreload >/dev/null 2>&1; then sbreload || true; fi\n' "$APP_NAME" "$APP_NAME" "$APP_NAME" > package/DEBIAN/postinst
+
+          chmod 0755 package/DEBIAN/postinst
+
+          dpkg-deb --build package "${APP_NAME}-${VERSION}.deb"
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: "${{ env.APP_NAME }}-${{ env.VERSION }}.deb"
+          path: "${{ env.APP_NAME }}-${{ env.VERSION }}.deb"
