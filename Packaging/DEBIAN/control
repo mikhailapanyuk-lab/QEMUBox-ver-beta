@@ -1,0 +1,12 @@
+Package: qemubox
+Name: QEMUBox
+Version: 0.1.0
+Architecture: iphoneos-arm
+Maintainer: mikhailapanyuk-lab <mikhail.apanyuk@icloud.com>
+Description: QEMU virtualization environment for iOS with OS downloader and VM management.
+Section: utils
+Priority: optional
+Depends: 
+Conflicts:
+Provides: qemubox
+Homepage: https://github.com/mikhailapanyuk-lab/QEMUBox-ver-beta
