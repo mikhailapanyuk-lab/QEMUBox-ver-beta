@@ -10,12 +10,14 @@ jobs:
     name: Build and package .deb
     runs-on: macos-latest
     env:
-      # Edit these to match your Xcode scheme / app name
+      # REQUIRED: change these if needed
       SCHEME: QEMUBox
       APP_NAME: QEMUBox
       PACKAGE_IDENTIFIER: com.yourcompany.qemubox
       VERSION: 0.1.0
       ARCH: iphoneos-arm64
+      # Optional: set PROJECT_FILE to override detection (e.g., ios/QEMUBox.xcodeproj or ios/QEMUBox.xcworkspace)
+      # PROJECT_FILE: ios/QEMUBox.xcodeproj
 
     steps:
       - name: Checkout
@@ -27,23 +29,68 @@ jobs:
           brew update
           brew install dpkg || true
 
-      - name: Find Xcode project or workspace
+      - name: Find Xcode project or workspace (recursive, with override)
         id: findproj
         run: |
-          ws=$(ls *.xcworkspace 2>/dev/null || true)
-          proj=$(ls *.xcodeproj 2>/dev/null || true)
+          set -e
+          echo "Looking for Xcode workspace/project..."
+          if [ -n "${{ env.PROJECT_FILE }}" ]; then
+            # Use explicit override
+            pf="${{ env.PROJECT_FILE }}"
+            if [ -e "$pf" ]; then
+              if [[ "$pf" == *.xcworkspace* ]]; then
+                echo "project_type=workspace" >> $GITHUB_OUTPUT
+                echo "project_file=$pf" >> $GITHUB_OUTPUT
+                echo "Found workspace via PROJECT_FILE: $pf"
+                exit 0
+              elif [[ "$pf" == *.xcodeproj* ]]; then
+                echo "project_type=project" >> $GITHUB_OUTPUT
+                echo "project_file=$pf" >> $GITHUB_OUTPUT
+                echo "Found project via PROJECT_FILE: $pf"
+                exit 0
+              fi
+            fi
+            echo "PROJECT_FILE was set but not found or not a workspace/project: $pf" >&2
+            exit 1
+          fi
+
+          # Try to find workspace first (recursive)
+          ws=$(find . -type d -name "*.xcworkspace" -print -quit || true)
+          proj=$(find . -type d -name "*.xcodeproj" -print -quit || true)
+
           if [ -n "$ws" ]; then
+            # strip leading ./ for cleanliness
+            ws=${ws#./}
             echo "project_type=workspace" >> $GITHUB_OUTPUT
             echo "project_file=$ws" >> $GITHUB_OUTPUT
-          else
+            echo "Found workspace: $ws"
+            exit 0
+          fi
+
+          if [ -n "$proj" ]; then
+            proj=${proj#./}
             echo "project_type=project" >> $GITHUB_OUTPUT
             echo "project_file=$proj" >> $GITHUB_OUTPUT
+            echo "Found project: $proj"
+            exit 0
           fi
+
+          # Diagnostics: list top-level and ios/ directories to help debugging
+          echo "No .xcworkspace or .xcodeproj found in repo (recursive). Showing some files to help debug:" >&2
+          echo "Top-level files:" >&2
+          ls -la || true
+          echo "Recursively listing potential Xcode dirs (first 200 lines):" >&2
+          find . -maxdepth 4 -type d -print | sed -n '1,200p' >&2
+          echo "If your Xcode project lives in a subdirectory, set the PROJECT_FILE env to its path, e.g. 'PROJECT_FILE: ios/QEMUBox.xcodeproj'." >&2
+          exit 1
 
       - name: Build app (Release, device, unsigned)
         run: |
           set -e
           mkdir -p build
+          echo "Using project type: ${{ steps.findproj.outputs.project_type }}"
+          echo "Using project file: ${{ steps.findproj.outputs.project_file }}"
+
           if [ "${{ steps.findproj.outputs.project_type }}" = "workspace" ]; then
             xcodebuild -workspace "${{ steps.findproj.outputs.project_file }}" -scheme "${{ env.SCHEME }}" -configuration Release -sdk iphoneos BUILD_DIR=build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
           else
@@ -54,13 +101,18 @@ jobs:
         id: findapp
         run: |
           set -e
-          app=$(find build -type d -name "*.app" | head -n1)
+          app=$(find build -type d -name "*.app" | head -n1 || true)
           if [ -z "$app" ]; then
-            echo "No .app found in build output" >&2
+            echo "No .app found in build output. Listing build directory for debugging:" >&2
+            find build -maxdepth 4 -ls || true
             exit 1
           fi
+          # normalize path
+          app=${app#./}
           echo "app_path=$app" >> $GITHUB_OUTPUT
+          echo "Found .app at: $app"
 
+      # ... packaging & upload steps unchanged ...
       - name: Package .deb
         run: |
           set -e
