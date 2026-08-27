@@ -29,6 +29,8 @@ class OSRepository: ObservableObject {
                 downloadURL: "https://cdimage.ubuntu.com/daily-live/current/noble-live-server-arm64.iso",
                 size: 2_000_000_000,
                 checksum: "",
+                fileType: "iso",
+                postProcessHint: nil,
                 description: "Canonical Ubuntu Server - Latest LTS Release"
             ),
             OSImage(
@@ -39,6 +41,8 @@ class OSRepository: ObservableObject {
                 downloadURL: "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04-live-server-arm64.iso",
                 size: 1_600_000_000,
                 checksum: "",
+                fileType: "iso",
+                postProcessHint: nil,
                 description: "Canonical Ubuntu Server - Stable LTS Release"
             ),
             OSImage(
@@ -49,6 +53,8 @@ class OSRepository: ObservableObject {
                 downloadURL: "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Server/aarch64/iso/Fedora-Server-40-1.14-aarch64-dvd.iso",
                 size: 2_200_000_000,
                 checksum: "",
+                fileType: "iso",
+                postProcessHint: nil,
                 description: "Fedora Server - Cutting-edge Linux"
             ),
             OSImage(
@@ -59,6 +65,8 @@ class OSRepository: ObservableObject {
                 downloadURL: "https://cdimage.debian.org/debian-cd/current/arm64/iso-dvd/debian-12.6.0-arm64-DVD-1.iso",
                 size: 3_700_000_000,
                 checksum: "",
+                fileType: "iso",
+                postProcessHint: nil,
                 description: "Debian Stable - Universal Operating System"
             ),
             OSImage(
@@ -69,6 +77,8 @@ class OSRepository: ObservableObject {
                 downloadURL: "https://cdimage.debian.org/cdimage/archive/11.8.0/arm64/iso-dvd/debian-11.8.0-arm64-DVD-1.iso",
                 size: 3_600_000_000,
                 checksum: "",
+                fileType: "iso",
+                postProcessHint: nil,
                 description: "Debian Stable - Classic Release"
             ),
             OSImage(
@@ -79,6 +89,8 @@ class OSRepository: ObservableObject {
                 downloadURL: "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-standard-3.19.1-aarch64.iso",
                 size: 220_000_000,
                 checksum: "",
+                fileType: "iso",
+                postProcessHint: nil,
                 description: "Alpine Linux - Lightweight & Secure"
             ),
             OSImage(
@@ -89,6 +101,8 @@ class OSRepository: ObservableObject {
                 downloadURL: "https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/aarch64/alpine-standard-3.18.6-aarch64.iso",
                 size: 215_000_000,
                 checksum: "",
+                fileType: "iso",
+                postProcessHint: nil,
                 description: "Alpine Linux - Stable Lightweight Release"
             ),
             OSImage(
@@ -99,7 +113,46 @@ class OSRepository: ObservableObject {
                 downloadURL: "https://mirrors.centos.org/mirrorlist?path=/9-stream/BaseOS/aarch64/iso/CentOS-Stream-9-latest-aarch64-dvd1.iso",
                 size: 8_000_000_000,
                 checksum: "",
+                fileType: "iso",
+                postProcessHint: nil,
                 description: "CentOS Stream - Enterprise Linux"
+            ),
+            // macOS entries: NOTE — these DO NOT include Apple installer files. Users must supply or host pre-built macOS qcow2/raw images.
+            OSImage(
+                id: "macos-monterey",
+                name: "macOS",
+                version: "Monterey",
+                architecture: "x86_64",
+                downloadURL: "",
+                size: 25_000_000_000,
+                checksum: "",
+                fileType: "qcow2",
+                postProcessHint: "Provide a pre-built macOS qcow2 image; see Documentation/INSTALLATION.md for conversion instructions.",
+                description: "macOS Monterey (user-supplied qcow2/raw image required)"
+            ),
+            OSImage(
+                id: "macos-ventura",
+                name: "macOS",
+                version: "Ventura",
+                architecture: "x86_64",
+                downloadURL: "",
+                size: 30_000_000_000,
+                checksum: "",
+                fileType: "qcow2",
+                postProcessHint: "Provide a pre-built macOS qcow2 image; see Documentation/INSTALLATION.md for conversion instructions.",
+                description: "macOS Ventura (user-supplied qcow2/raw image required)"
+            ),
+            OSImage(
+                id: "macos-sonoma",
+                name: "macOS",
+                version: "Sonoma",
+                architecture: "x86_64",
+                downloadURL: "",
+                size: 35_000_000_000,
+                checksum: "",
+                fileType: "qcow2",
+                postProcessHint: "Provide a pre-built macOS qcow2 image; see Documentation/INSTALLATION.md for conversion instructions.",
+                description: "macOS Sonoma (user-supplied qcow2/raw image required)"
             )
         ]
         
@@ -132,9 +185,11 @@ struct OSImage: Identifiable, Codable {
     let downloadURL: String
     let size: UInt64
     let checksum: String
+    let fileType: String
+    let postProcessHint: String?
     let description: String
     
     enum CodingKeys: String, CodingKey {
-        case id, name, version, architecture, downloadURL, size, checksum, description
+        case id, name, version, architecture, downloadURL, size, checksum, fileType, postProcessHint, description
     }
 }
